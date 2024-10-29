@@ -1,27 +1,65 @@
-use std::net::TcpListener;
+use std::{net::TcpListener, sync::LazyLock};
 
-use sqlx::PgPool;
-use zero2prod::{configuration::get_configuration, startup::run};
+use sqlx::{Connection, Executor, PgConnection, PgPool};
+use uuid::Uuid;
+use zero2prod::{
+    configuration::{get_configuration, DatabaseSettings},
+    startup::run,
+    telemetry::{get_subscriber, init_subscriber},
+};
 
 pub struct TestApp {
     pub address: String,
     pub db_pool: PgPool,
 }
 
+static TRACING: LazyLock<()> = LazyLock::new(|| {
+    let subscriber = get_subscriber("test".into(), "debug".into());
+    init_subscriber(subscriber);
+});
+
 async fn spawn_app() -> TestApp {
+    LazyLock::force(&TRACING);
     let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind a random port");
     let port = listener.local_addr().unwrap().port();
     let address = format!("http://127.0.0.1:{}", port);
-    let configuration = get_configuration().expect("Failed to read configuration.");
-    let connection_pool = PgPool::connect(&configuration.database.connection_string())
-        .await
-        .expect("Failed to connect to Postgres.");
+    let mut configuration = get_configuration().expect("Failed to read configuration.");
+    configuration.database.database_name = Uuid::new_v4().to_string();
+    let connection_pool = configure_database(&configuration.database).await;
     let server = run(listener, connection_pool.clone()).expect("failed to spawn app");
     let _ = tokio::spawn(server);
     TestApp {
         address,
         db_pool: connection_pool,
     }
+}
+
+pub async fn configure_database(config: &DatabaseSettings) -> PgPool {
+    let maintenance_settings = DatabaseSettings {
+        database_name: "postgres".to_string(),
+        username: "postgres".to_string(),
+        password: "password".to_string(),
+        ..config.clone()
+    };
+    let mut connection = PgConnection::connect(&maintenance_settings.connection_string())
+        .await
+        .expect("failed to connect to Postgres");
+
+    connection
+        .execute(format!(r#"CREATE DATABASE "{}";"#, config.database_name).as_str())
+        .await
+        .expect("failed to create database.");
+
+    let connection_pool = PgPool::connect(&config.connection_string())
+        .await
+        .expect("failed to connect to Postgres.");
+
+    sqlx::migrate!("./migrations")
+        .run(&connection_pool)
+        .await
+        .expect("failed to migrate database");
+
+    connection_pool
 }
 
 #[tokio::test]
@@ -72,6 +110,7 @@ async fn subscribe_returns_a_400_when_data_is_missing() {
         ("email=ursula_le_guin%40gmail.com", "missing the name"),
         ("", "missing both name and email"),
     ];
+
     for (invalid_body, error_message) in test_cases {
         // Act
         let response = client
