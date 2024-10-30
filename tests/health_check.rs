@@ -1,6 +1,6 @@
 use std::{net::TcpListener, sync::LazyLock};
 
-use secrecy::{ExposeSecret, SecretString};
+use secrecy::SecretString;
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 use uuid::Uuid;
 use zero2prod::{
@@ -42,17 +42,16 @@ pub async fn configure_database(config: &DatabaseSettings) -> PgPool {
         password: SecretString::from("password"),
         ..config.clone()
     };
-    let mut connection =
-        PgConnection::connect(&maintenance_settings.connection_string().expose_secret())
-            .await
-            .expect("failed to connect to Postgres");
+    let mut connection = PgConnection::connect_with(&maintenance_settings.connect_options())
+        .await
+        .expect("failed to connect to Postgres");
 
     connection
         .execute(format!(r#"CREATE DATABASE "{}";"#, config.database_name).as_str())
         .await
         .expect("failed to create database.");
 
-    let connection_pool = PgPool::connect(&config.connection_string().expose_secret())
+    let connection_pool = PgPool::connect_with(config.connect_options())
         .await
         .expect("failed to connect to Postgres.");
 
@@ -104,7 +103,6 @@ async fn subscribe_returns_a_200_for_valid_form_data() {
 
 #[tokio::test]
 async fn subscribe_returns_a_400_when_data_is_missing() {
-    // Arrange
     let app = spawn_app().await;
     let client = reqwest::Client::new();
     let test_cases = vec![
