@@ -29,6 +29,8 @@ tracing-log = "0.2.0"
 secrecy = { version = "0.10.3", features = ["serde"] }
 tracing-actix-web = "0.7.14"
 serde-aux = "4.5.0"
+unicode-segmentation = "1.12.0"
+claims = "0.7.1"
 
 
 [dependencies.sqlx]
@@ -42,3 +44,6 @@ features = [
     "chrono",
     "migrate",
 ]
+
+[dev-dependencies]
+claims = "0.7.1"

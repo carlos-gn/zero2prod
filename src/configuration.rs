@@ -50,7 +50,7 @@ pub fn get_configuration() -> Result<Settings, config::ConfigError> {
     let environment: Environment = std::env::var("APP_ENVIRONMENT")
         .unwrap_or_else(|_| "local".into())
         .try_into()
-        .expect("");
+        .expect("Failed to parse APP_ENVIRONMENT");
 
     let environment_filename = format!("{}.yaml", environment.as_str());
 
