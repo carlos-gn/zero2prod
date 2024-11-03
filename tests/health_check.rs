@@ -1,10 +1,12 @@
-use std::{net::TcpListener, sync::LazyLock};
+use std::{net::TcpListener, str::FromStr, sync::LazyLock};
 
+use reqwest::Url;
 use secrecy::SecretString;
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 use uuid::Uuid;
 use zero2prod::{
     configuration::{get_configuration, DatabaseSettings},
+    email_client::EmailClient,
     startup::run,
     telemetry::{get_subscriber, init_subscriber},
 };
@@ -27,7 +29,20 @@ async fn spawn_app() -> TestApp {
     let mut configuration = get_configuration().expect("Failed to read configuration.");
     configuration.database.database_name = Uuid::new_v4().to_string();
     let connection_pool = configure_database(&configuration.database).await;
-    let server = run(listener, connection_pool.clone()).expect("failed to spawn app");
+
+    let sender_email = configuration
+        .email_client
+        .sender()
+        .expect("Invalid sender email address.");
+
+    let url = reqwest::Url::parse(&configuration.email_client.base_url).unwrap();
+    let email_client = EmailClient::new(
+        url,
+        sender_email,
+        configuration.email_client.authorization_token,
+    );
+
+    let server = run(listener, connection_pool.clone(), email_client).expect("failed to spawn app");
     let _ = tokio::spawn(server);
     TestApp {
         address,
