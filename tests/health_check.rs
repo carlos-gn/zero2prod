@@ -36,10 +36,12 @@ async fn spawn_app() -> TestApp {
         .expect("Invalid sender email address.");
 
     let url = reqwest::Url::parse(&configuration.email_client.base_url).unwrap();
+    let timeout = configuration.email_client.timeout();
     let email_client = EmailClient::new(
         url,
         sender_email,
         configuration.email_client.authorization_token,
+        timeout,
     );
 
     let server = run(listener, connection_pool.clone(), email_client).expect("failed to spawn app");
