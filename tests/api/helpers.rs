@@ -9,6 +9,19 @@ use zero2prod::telemetry::{get_subscriber, init_subscriber};
 pub struct TestApp {
     pub address: String,
     pub db_pool: PgPool,
+    pub client: reqwest::Client,
+}
+
+impl TestApp {
+    pub async fn post_subscriptions(&self, body: &'static str) -> reqwest::Response {
+        self.client
+            .post(&format!("{}/subscriptions", &self.address))
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .body(body)
+            .send()
+            .await
+            .expect("Failed to execute request.")
+    }
 }
 
 static TRACING: LazyLock<()> = LazyLock::new(|| {
@@ -33,10 +46,13 @@ pub async fn spawn_app() -> TestApp {
         .expect("Failed to build application");
 
     let address = format!("http://127.0.0.1:{}", application.port());
-    let _ = tokio::spawn(application.run_until_stopped());
+    tokio::spawn(application.run_until_stopped());
+
+    let client = reqwest::Client::new();
 
     TestApp {
         address,
+        client,
         db_pool: get_connection_pool(&configuration.database),
     }
 }
